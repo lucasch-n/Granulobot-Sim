@@ -29,17 +29,16 @@ gear_params = [
 ]
 assert len(gear_params) == n
 
-# Motor/drive constants (paper-like, but chosen to ensure motion starts)
+# Motor/drive constants
 eta0     = 0.231      # [N·m·s/rad] viscous motor constant
 Gamma_f  = 0.024      # [N·m] Coulomb friction (static/kinetic threshold)
 alpha    = -1       # dimensionless motor feedback (1+alpha ~ 0.1 => low effective damping)
-G        = 0.5       # [N·m/rad] weak torsional spring gain
-I_theta  = 1.5e-2     # [kg·m^2] rotor inertia
-I_phi    = 0          # Gear moment of inertia
+G        = .5       # [N·m/rad] weak torsional spring gain
+I  = 7.5e-1     # [kg·m^2] moment of inertia
 rot_rat  = 0.5          # Magnet-to-gear shell moment of inertia ratio
 
-scale = .5
-damp_coeff = 50
+scale = 15
+damp_coeff =  .5
 
 # Neighbor coupling (kept light so the drive can win at startup)
 k_tan = 1 * scale   # [N·m/(rad/s)] viscous penalty (ω_i+ω_j)
@@ -49,7 +48,7 @@ k_eq    = 1 * scale
 zeta_n     = k_norm * damp_coeff       # Set higher than magnet force
 zeta_t     = k_tan * damp_coeff
 zeta_m     = k_m * damp_coeff
-mu = .1 # Static friction Coulomb threshold 
+mu = .5 # Static friction Coulomb threshold 
 
 # Constraints & integration
 dt              = 1e-3
@@ -72,7 +71,7 @@ mtr  = np.array([p["m"]      for p in gear_params], dtype=float)
 phi = np.zeros(n)
 theta = np.zeros(n)
 slip = np.zeros(n)
-omega_theta = 1e-5 * np.random.randn(n)          # tiny angular kick (helps break symmetry) according to chatgpt
+omega_theta = np.zeros(n)
 omega_phi = np.zeros(n)
 t     = 0.0
 
@@ -80,7 +79,6 @@ t     = 0.0
 R = d0 / (2 * np.sin(np.pi / n))
 ang0 = np.linspace(0, 2*np.pi, n, endpoint=False)
 r = np.column_stack([R*np.cos(ang0), R*np.sin(ang0)])
-# r += 1e-4 * np.random.randn(n, 2)          # tiny positional jitter
 v = np.zeros_like(r)
 r_i = r.copy()
 delta = np.zeros((n, n, 2))
@@ -127,14 +125,14 @@ def compute_gear_deltas(v, omega_theta, delta):
     return d_tan, d_norm, e, t_hat, relative_v, omega_slip
 
 def compute_gear_torque_and_forces(d_tan, d_norm, Ftan, Fnorm, e, t_hat):
-    Ftan += d_tan * k_tan
-    Fnorm += d_norm * k_norm
+    Ftan += d_tan * k_tan * dt
+    Fnorm += d_norm * k_norm * dt
     Ftan = coulomb_clip(Ftan, Fnorm)
     tot_tan = Ftan + zeta_t * d_tan
     tot_norm = Fnorm + zeta_n * d_norm
     Fgear = tot_tan[:, :, np.newaxis] * t_hat + tot_norm[:, :, np.newaxis] * e
     Tgear = tot_tan * (Fnorm + d0)
-    print(tot_tan[:, 1])
+    # print(tot_tan[:, 1])
     return Ftan, Fnorm, Fgear, Tgear
 
 
@@ -261,8 +259,8 @@ def step():
     T_theta = T_gear_net + torque_adjust / 2
     T_phi = Tmag - torque_adjust / 2
 
-    alpha_phi = T_phi / (rot_rat * mtr)
-    alpha_omega = T_theta / ((1-rot_rat) * mtr)
+    alpha_phi = T_phi / (rot_rat * mtr * I)
+    alpha_omega = T_theta / ((1-rot_rat) * mtr * I)
     omega_theta += alpha_omega * dt
     omega_phi += alpha_phi * dt
 
@@ -274,8 +272,9 @@ def step():
     # log state
     log_state(t, theta, omega_theta, phi, omega_phi, r, v, F_gear_net, Fmag, Ftan, Fnorm, relative_v, omega_slip)
 
-    if(int(200 * t) != int(200 * t0)):
-        print("yes")
+    if(int(25 * t) != int(25 * t0)):
+        print("t", t)
+    
     # print("t", t, "||Fgear, Fmag||", T_gear_net)
 
 
